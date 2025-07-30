@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package jwt;
+
+service JWTService {
+  rpc VerifyJWT(VerifyJWTRequest) returns (VerifyJWTResponse);
+}
+
+message VerifyJWTRequest {
+  string jwt = 1;
+}
+
+message VerifyJWTResponse {
+  bool success = 1;
+  string message = 2;
+}
