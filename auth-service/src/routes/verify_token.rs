@@ -1,6 +1,21 @@
-use axum::response::IntoResponse;
+use axum::{extract::State, response::IntoResponse, Json};
 use reqwest::StatusCode;
+use serde::Deserialize;
 
-pub async fn verify_token() -> impl IntoResponse {
-    StatusCode::OK.into_response()
+use crate::{app_state::AppState, domain::AuthAPIError, utils::auth::validate_token};
+
+pub async fn verify_token(
+    State(state): State<AppState>,
+    Json(request): Json<VerifyTokenRequest>,
+) -> Result<impl IntoResponse, AuthAPIError> {
+
+    validate_token(&state, &request.token)
+        .await
+        .map_err(|_| AuthAPIError::InvalidToken)?;
+    Ok(StatusCode::OK)
+}
+
+#[derive(Deserialize)]
+pub struct VerifyTokenRequest {
+    token: String,
 }

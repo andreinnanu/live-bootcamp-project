@@ -1,35 +1,47 @@
 use std::sync::Arc;
 
-use auth_service::{app_state::AppState, services::HashmapUserStore, Application};
+use auth_service::{
+    app_state::AppState, services::{HashmapUserStore, HashsetBannedTokenStore}, utils::constants::test, Application,
+};
+use reqwest::cookie::Jar;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 pub struct TestApp {
     pub address: String,
     pub http_client: reqwest::Client,
+    pub cookie_jar: Arc<Jar>,
 }
 
 impl TestApp {
     pub async fn new() -> Self {
-        let app_state = AppState::new(Arc::new(RwLock::new(Box::new(HashmapUserStore::default()))));
+        let app_state = AppState::new(
+            Arc::new(RwLock::new(Box::new(HashmapUserStore::default()))),
+            Arc::new(RwLock::new(Box::new(HashsetBannedTokenStore::default()))),
+        );
 
-        let app = Application::build(app_state, "127.0.0.1:0")
+        let app = Application::build(app_state, test::APP_ADDRESS)
             .await
             .expect("Failed to build app");
 
         let address = format!("http://{}", app.address.clone());
 
         // Run the auth service in a separate async task
-        // to avoid blocking the main test thread. 
+        // to avoid blocking the main test thread.
         #[allow(clippy::let_underscore_future)]
         let _ = tokio::spawn(app.run());
 
-        let http_client = reqwest::Client::new(); // Create a Reqwest http client instance
+        let cookie_jar = Arc::new(Jar::default());
+        let http_client = reqwest::Client::builder()
+            .cookie_provider(cookie_jar.clone())
+            .build()
+            .unwrap(); // Create a Reqwest http client instance
 
         // Create new `TestApp` instance and return it
-        TestApp{
+        Self {
             address,
             http_client,
+            cookie_jar,
         }
     }
 
@@ -54,9 +66,13 @@ impl TestApp {
             .expect("Failed to execute request.")
     }
 
-    pub async fn post_login(&self) -> reqwest::Response {
+    pub async fn post_login<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
         self.http_client
             .post(format!("{}/login", &self.address))
+            .json(body)
             .send()
             .await
             .expect("Failed to execute request.")
@@ -78,12 +94,38 @@ impl TestApp {
             .expect("Failed to execute request.")
     }
 
-    pub async fn post_verify_token(&self) -> reqwest::Response {
+    pub async fn post_verify_token<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
         self.http_client
             .post(format!("{}/verify-token", &self.address))
+            .json(body)
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn create_user_and_login(&self, email: &str, pwd: &str) -> reqwest::Response {
+        let mut response = self
+            .post_signup(&serde_json::json!({
+                "email": email,
+                "password": pwd,
+                "requires2FA": false
+            }))
+            .await;
+
+        assert_eq!(response.status().as_u16(), 201);
+
+        let login_body = serde_json::json!({
+            "email": email,
+            "password": pwd,
+        });
+
+        response = self.post_login(&login_body).await;
+        assert_eq!(response.status().as_u16(), 200);
+
+        response
     }
 }
 

@@ -18,3 +18,9 @@ pub enum UserStoreError {
     InvalidCredentials,
     UnexpectedError,
 }
+
+#[async_trait::async_trait]
+pub trait BannedTokenStore: Send + Sync {
+    async fn ban_token(&mut self, token: String);
+    async fn is_banned(&self, token: &str) -> bool;
+}
