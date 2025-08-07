@@ -1,19 +1,24 @@
 use std::error::Error;
 
 use axum::{
-    http::Method,
-    http::StatusCode,
+    http::{Method, StatusCode},
+    middleware,
     response::{IntoResponse, Response},
     routing::post,
     serve::Serve,
     Json, Router,
 };
 use domain::AuthAPIError;
+use http::{request::Parts as RequestParts, HeaderValue};
 use serde::{Deserialize, Serialize};
-use tower_http::{cors::CorsLayer, services::ServeDir};
+use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
+    services::ServeDir,
+};
 
-use crate::app_state::AppState;
 use crate::routes::{login, logout, signup, verify_2fa, verify_token};
+use crate::utils::cors::CorsConfig;
+use crate::{app_state::AppState, utils::cors::check_allowed_origins};
 
 pub mod app_state;
 pub mod domain;
@@ -35,17 +40,20 @@ impl Application {
         // Also, remove the `hello` route.
         // We don't need it at this point!
 
-        let allowed_origins = [
-            "http://localhost:8000".parse()?,
-            "http://161.35.120.222:8000".parse()?,
-        ];
+        let mut dyn_cors: CorsConfig = CorsConfig::new();
+        let dyn_cors_clone = dyn_cors.clone();
+        dyn_cors.update_allowed_origins_on_sighup();
 
         let cors = CorsLayer::new()
             // Allow GET and POST requests
             .allow_methods([Method::GET, Method::POST])
             // Allow cookies to be included in requests
             .allow_credentials(true)
-            .allow_origin(allowed_origins);
+            .allow_origin(AllowOrigin::async_predicate(
+                |origin: HeaderValue, _request_parts: &RequestParts| async move {
+                    dyn_cors.is_allowed(origin).await
+                },
+            ));
 
         let router = Router::new()
             .nest_service("/", ServeDir::new("assets"))
@@ -55,7 +63,11 @@ impl Application {
             .route("/logout", post(logout))
             .route("/verify-token", post(verify_token))
             .with_state(app_state)
-            .layer(cors);
+            .layer(cors)
+            .layer(middleware::from_fn_with_state(
+                dyn_cors_clone,
+                check_allowed_origins,
+            ));
 
         let listener = tokio::net::TcpListener::bind(address).await?;
         let address = listener.local_addr()?.to_string();
