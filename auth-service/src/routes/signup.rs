@@ -13,10 +13,6 @@ pub async fn signup(
     let email = request.email;
     let password = request.password;
 
-    // TODO: early return AuthAPIError::InvalidCredentials if:
-    // - email is empty or does not contain '@'
-    // - password is less than 8 characters
-
     let user = User::new(
         Email::parse(&email).map_err(|_| AuthAPIError::InvalidCredentials)?,
         Password::parse(&password).map_err(|_| AuthAPIError::InvalidCredentials)?,
@@ -25,9 +21,6 @@ pub async fn signup(
 
     let mut user_store = state.user_store.write().await;
 
-    // TODO: early return AuthAPIError::UserAlreadyExists if email exists in user_store.
-
-    // TODO: instead of using unwrap, early return AuthAPIError::UnexpectedError if add_user() fails.
     match user_store.add_user(user).await {
         Ok(()) => {
             let response = Json(SignupResponse {

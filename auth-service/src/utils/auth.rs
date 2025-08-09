@@ -91,7 +91,9 @@ pub struct Claims {
 mod tests {
     use std::sync::Arc;
 
-    use crate::services::{HashmapUserStore, HashsetBannedTokenStore};
+    use crate::services::{
+        HashmapTwoFACodeStore, HashmapUserStore, HashsetBannedTokenStore, MockEmailClient,
+    };
 
     use super::*;
     use once_cell::sync::Lazy;
@@ -101,6 +103,8 @@ mod tests {
         AppState::new(
             Arc::new(RwLock::new(Box::new(HashmapUserStore::default()))),
             Arc::new(RwLock::new(Box::new(HashsetBannedTokenStore::default()))),
+            Arc::new(RwLock::new(Box::new(HashmapTwoFACodeStore::default()))),
+            Arc::new(RwLock::new(Box::new(MockEmailClient))),
         )
     });
 

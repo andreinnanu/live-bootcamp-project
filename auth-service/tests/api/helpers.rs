@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use auth_service::{
-    app_state::AppState, services::{HashmapUserStore, HashsetBannedTokenStore}, utils::constants::test, Application,
+    app_state::{AppState, TwoFACodeStoreType},
+    services::{HashmapTwoFACodeStore, HashmapUserStore, HashsetBannedTokenStore, MockEmailClient},
+    utils::constants::test,
+    Application,
 };
 use reqwest::cookie::Jar;
 use tokio::sync::RwLock;
@@ -11,13 +14,19 @@ pub struct TestApp {
     pub address: String,
     pub http_client: reqwest::Client,
     pub cookie_jar: Arc<Jar>,
+    pub two_fa_code_store: TwoFACodeStoreType,
 }
 
 impl TestApp {
     pub async fn new() -> Self {
+        let two_fa_code_store: TwoFACodeStoreType =
+            Arc::new(RwLock::new(Box::new(HashmapTwoFACodeStore::default())));
+
         let app_state = AppState::new(
             Arc::new(RwLock::new(Box::new(HashmapUserStore::default()))),
             Arc::new(RwLock::new(Box::new(HashsetBannedTokenStore::default()))),
+            two_fa_code_store.clone(),
+            Arc::new(RwLock::new(Box::new(MockEmailClient))),
         );
 
         let app = Application::build(app_state, test::APP_ADDRESS)
@@ -42,6 +51,7 @@ impl TestApp {
             address,
             http_client,
             cookie_jar,
+            two_fa_code_store: two_fa_code_store.clone(),
         }
     }
 
@@ -53,7 +63,6 @@ impl TestApp {
             .expect("Failed to execute request.")
     }
 
-    // TODO: Implement helper functions for all other routes (signup, login, logout, verify-2fa, and verify-token)
     pub async fn post_signup<Body>(&self, body: &Body) -> reqwest::Response
     where
         Body: serde::Serialize,
@@ -78,9 +87,13 @@ impl TestApp {
             .expect("Failed to execute request.")
     }
 
-    pub async fn post_verify_2fa(&self) -> reqwest::Response {
+    pub async fn post_verify_2fa<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
         self.http_client
             .post(format!("{}/verify-2fa", &self.address))
+            .json(body)
             .send()
             .await
             .expect("Failed to execute request.")
@@ -106,12 +119,17 @@ impl TestApp {
             .expect("Failed to execute request.")
     }
 
-    pub async fn create_user_and_login(&self, email: &str, pwd: &str) -> reqwest::Response {
+    pub async fn create_user_and_login(
+        &self,
+        email: &str,
+        pwd: &str,
+        two_fa: bool,
+    ) -> reqwest::Response {
         let mut response = self
             .post_signup(&serde_json::json!({
                 "email": email,
                 "password": pwd,
-                "requires2FA": false
+                "requires2FA": two_fa
             }))
             .await;
 
@@ -123,8 +141,6 @@ impl TestApp {
         });
 
         response = self.post_login(&login_body).await;
-        assert_eq!(response.status().as_u16(), 200);
-
         response
     }
 }

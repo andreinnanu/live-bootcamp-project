@@ -1,4 +1,4 @@
-use auth_service::{utils::constants::JWT_COOKIE_NAME};
+use auth_service::utils::constants::JWT_COOKIE_NAME;
 use reqwest::Url;
 
 use crate::helpers::TestApp;
@@ -18,9 +18,7 @@ async fn should_return_401_if_invalid_token() {
 
     // add invalid cookie
     app.cookie_jar.add_cookie_str(
-        &format!(
-            "{JWT_COOKIE_NAME}=invalid; HttpOnly; SameSite=Lax; Secure; Path=/"
-        ),
+        &format!("{JWT_COOKIE_NAME}=invalid; HttpOnly; SameSite=Lax; Secure; Path=/"),
         &Url::parse("http://127.0.0.1").expect("Failed to parse URL"),
     );
 
@@ -33,7 +31,9 @@ async fn should_return_401_if_invalid_token() {
 async fn should_return_200_if_valid_jwt_cookie() {
     let app = TestApp::new().await;
 
-    let mut response = app.create_user_and_login("test@email.com", "MySecretPwd").await;
+    let mut response = app
+        .create_user_and_login("test@email.com", "MySecretPwd", false)
+        .await;
 
     let auth_cookie = response
         .cookies()
@@ -44,11 +44,9 @@ async fn should_return_200_if_valid_jwt_cookie() {
 
     // Logged in
 
-    let token = auth_cookie.value(); 
+    let token = auth_cookie.value();
     app.cookie_jar.add_cookie_str(
-        &format!(
-            "{JWT_COOKIE_NAME}={token}; HttpOnly; SameSite=Lax; Secure; Path=/"
-        ),
+        &format!("{JWT_COOKIE_NAME}={token}; HttpOnly; SameSite=Lax; Secure; Path=/"),
         &Url::parse("http://127.0.0.1").expect("Failed to parse URL"),
     );
 
@@ -61,7 +59,9 @@ async fn should_return_200_if_valid_jwt_cookie() {
 async fn should_return_400_if_logout_called_twice_in_a_row() {
     let app = TestApp::new().await;
 
-    let mut response = app.create_user_and_login("test@email.com", "MySecretPwd").await;
+    let mut response = app
+        .create_user_and_login("test@email.com", "MySecretPwd", false)
+        .await;
 
     let auth_cookie = response
         .cookies()
@@ -72,11 +72,9 @@ async fn should_return_400_if_logout_called_twice_in_a_row() {
 
     // Logged in
 
-    let token = auth_cookie.value(); 
+    let token = auth_cookie.value();
     app.cookie_jar.add_cookie_str(
-        &format!(
-            "{JWT_COOKIE_NAME}={token}; HttpOnly; SameSite=Lax; Secure; Path=/"
-        ),
+        &format!("{JWT_COOKIE_NAME}={token}; HttpOnly; SameSite=Lax; Secure; Path=/"),
         &Url::parse("http://127.0.0.1").expect("Failed to parse URL"),
     );
 
@@ -88,4 +86,3 @@ async fn should_return_400_if_logout_called_twice_in_a_row() {
 
     assert_eq!(response.status().as_u16(), 400);
 }
-

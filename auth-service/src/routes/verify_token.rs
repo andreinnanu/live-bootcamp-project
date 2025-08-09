@@ -8,7 +8,6 @@ pub async fn verify_token(
     State(state): State<AppState>,
     Json(request): Json<VerifyTokenRequest>,
 ) -> Result<impl IntoResponse, AuthAPIError> {
-
     validate_token(&state, &request.token)
         .await
         .map_err(|_| AuthAPIError::InvalidToken)?;

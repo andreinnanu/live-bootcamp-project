@@ -26,7 +26,7 @@ impl User {
     pub fn validate_password(&self, password: Password) -> Result<(), UserStoreError> {
         match self.password == password {
             true => Ok(()),
-            false => Err(UserStoreError::InvalidCredentials)
+            false => Err(UserStoreError::InvalidCredentials),
         }
     }
 }

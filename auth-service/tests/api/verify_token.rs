@@ -5,11 +5,13 @@ use crate::helpers::TestApp;
 
 #[tokio::test]
 async fn should_return_422_if_malformed_input() {
-       let app = TestApp::new().await;
+    let app = TestApp::new().await;
 
-    let response = app.post_verify_token(&serde_json::json!({
-        "invalid_jwt": true
-    })).await;
+    let response = app
+        .post_verify_token(&serde_json::json!({
+            "invalid_jwt": true
+        }))
+        .await;
 
     assert_eq!(response.status().as_u16(), 422);
 }
@@ -18,7 +20,9 @@ async fn should_return_422_if_malformed_input() {
 async fn should_return_200_valid_token() {
     let app = TestApp::new().await;
 
-    let mut response = app.create_user_and_login("test@email.com", "MySecretPwd").await;
+    let mut response = app
+        .create_user_and_login("test@email.com", "MySecretPwd", false)
+        .await;
 
     let auth_cookie = response
         .cookies()
@@ -29,9 +33,11 @@ async fn should_return_200_valid_token() {
 
     let token = auth_cookie.value();
 
-    response = app.post_verify_token(&serde_json::json!({
-        "token": token
-    })).await;
+    response = app
+        .post_verify_token(&serde_json::json!({
+            "token": token
+        }))
+        .await;
 
     assert_eq!(response.status().as_u16(), 200);
 }
@@ -40,9 +46,11 @@ async fn should_return_200_valid_token() {
 async fn should_return_401_if_invalid_token() {
     let app = TestApp::new().await;
 
-    let response = app.post_verify_token(&serde_json::json!({
-        "token": "invalid token"
-    })).await;
+    let response = app
+        .post_verify_token(&serde_json::json!({
+            "token": "invalid token"
+        }))
+        .await;
 
     assert_eq!(response.status().as_u16(), 401);
 }
@@ -51,7 +59,9 @@ async fn should_return_401_if_invalid_token() {
 async fn should_return_401_if_banned_token() {
     let app = TestApp::new().await;
 
-    let response = app.create_user_and_login("test@email.com", "MySecretPwd").await;
+    let response = app
+        .create_user_and_login("test@email.com", "MySecretPwd", false)
+        .await;
 
     let auth_cookie = response
         .cookies()
@@ -62,11 +72,9 @@ async fn should_return_401_if_banned_token() {
 
     // Logged in
 
-    let token = auth_cookie.value(); 
+    let token = auth_cookie.value();
     app.cookie_jar.add_cookie_str(
-        &format!(
-            "{JWT_COOKIE_NAME}={token}; HttpOnly; SameSite=Lax; Secure; Path=/"
-        ),
+        &format!("{JWT_COOKIE_NAME}={token}; HttpOnly; SameSite=Lax; Secure; Path=/"),
         &Url::parse("http://127.0.0.1").expect("Failed to parse URL"),
     );
 
@@ -74,9 +82,11 @@ async fn should_return_401_if_banned_token() {
 
     assert_eq!(response.status().as_u16(), 200);
 
-    let response = app.post_verify_token(&serde_json::json!({
-        "token": token.to_owned()
-    })).await;
+    let response = app
+        .post_verify_token(&serde_json::json!({
+            "token": token.to_owned()
+        }))
+        .await;
 
     assert_eq!(response.status().as_u16(), 401);
 }
