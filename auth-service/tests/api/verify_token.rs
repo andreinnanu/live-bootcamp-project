@@ -1,7 +1,7 @@
 use auth_service::utils::constants::JWT_COOKIE_NAME;
 use reqwest::Url;
 
-use crate::helpers::TestApp;
+use crate::helpers::{get_random_email, TestApp};
 
 #[tokio::test]
 async fn should_return_422_if_malformed_input() {
@@ -22,8 +22,10 @@ async fn should_return_422_if_malformed_input() {
 async fn should_return_200_valid_token() {
     let mut app = TestApp::new().await;
 
+    let random_email = get_random_email();
+
     let mut response = app
-        .create_user_and_login("test@email.com", "MySecretPwd", false)
+        .create_user_and_login(&random_email, "MySecretPwd", false)
         .await;
 
     let auth_cookie = response
@@ -66,7 +68,7 @@ async fn should_return_401_if_banned_token() {
     let mut app = TestApp::new().await;
 
     let response = app
-        .create_user_and_login("test@email.com", "MySecretPwd", false)
+        .create_user_and_login(&get_random_email(), "MySecretPwd", false)
         .await;
 
     let auth_cookie = response

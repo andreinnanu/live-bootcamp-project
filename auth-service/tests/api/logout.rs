@@ -1,7 +1,7 @@
 use auth_service::utils::constants::JWT_COOKIE_NAME;
 use reqwest::Url;
 
-use crate::helpers::TestApp;
+use crate::helpers::{get_random_email, TestApp};
 
 #[tokio::test]
 async fn should_return_400_if_jwt_cookie_missing() {
@@ -35,7 +35,7 @@ async fn should_return_200_if_valid_jwt_cookie() {
     let mut app = TestApp::new().await;
 
     let mut response = app
-        .create_user_and_login("test@email.com", "MySecretPwd", false)
+        .create_user_and_login(&get_random_email(), "MySecretPwd", false)
         .await;
 
     let auth_cookie = response
@@ -65,7 +65,7 @@ async fn should_return_400_if_logout_called_twice_in_a_row() {
     let mut app = TestApp::new().await;
 
     let mut response = app
-        .create_user_and_login("test@email.com", "MySecretPwd", false)
+        .create_user_and_login(&get_random_email(), "MySecretPwd", false)
         .await;
 
     let auth_cookie = response
