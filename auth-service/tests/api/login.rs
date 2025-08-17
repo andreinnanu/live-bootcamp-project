@@ -8,7 +8,7 @@ use serde_json::json;
 
 #[tokio::test]
 async fn should_return_422_if_malformed_credentials() {
-    let app = TestApp::new().await;
+    let mut app = TestApp::new().await;
 
     let response = app
         .post_login(&json!({
@@ -17,13 +17,13 @@ async fn should_return_422_if_malformed_credentials() {
         .await;
 
     assert_eq!(response.status().as_u16(), 422);
+
+    app.cleanup().await;
 }
 
 #[tokio::test]
 async fn should_return_400_if_invalid_input() {
-    // Call the log-in route with invalid credentials and assert that a
-    // 400 HTTP status code is returned along with the appropriate error message.
-    let app = TestApp::new().await;
+    let mut app = TestApp::new().await;
 
     let response = app
         .post_login(&json!({
@@ -33,13 +33,13 @@ async fn should_return_400_if_invalid_input() {
         .await;
 
     assert_eq!(response.status().as_u16(), 400);
+
+    app.cleanup().await;
 }
 
 #[tokio::test]
 async fn should_return_401_if_incorrect_credentials() {
-    // Call the log-in route with incorrect credentials and assert
-    // that a 401 HTTP status code is returned along with the appropriate error message.
-    let app = TestApp::new().await;
+    let mut app = TestApp::new().await;
 
     let response = app
         .post_login(&json!({
@@ -49,11 +49,13 @@ async fn should_return_401_if_incorrect_credentials() {
         .await;
 
     assert_eq!(response.status().as_u16(), 401);
+
+    app.cleanup().await;
 }
 
 #[tokio::test]
 async fn should_return_200_if_valid_credentials_and_2fa_disabled() {
-    let app = TestApp::new().await;
+    let mut app = TestApp::new().await;
 
     let random_email = get_random_email();
 
@@ -69,11 +71,13 @@ async fn should_return_200_if_valid_credentials_and_2fa_disabled() {
         .expect("No auth cookie found");
 
     assert!(!auth_cookie.value().is_empty());
+
+    app.cleanup().await;
 }
 
 #[tokio::test]
 async fn should_return_206_if_valid_credentials_and_2fa_enabled() {
-    let app = TestApp::new().await;
+    let mut app = TestApp::new().await;
 
     let random_email = get_random_email();
 
@@ -100,4 +104,6 @@ async fn should_return_206_if_valid_credentials_and_2fa_enabled() {
             .0,
         LoginAttemptId::parse(json_body.login_attempt_id).unwrap()
     );
+
+    app.cleanup().await;
 }

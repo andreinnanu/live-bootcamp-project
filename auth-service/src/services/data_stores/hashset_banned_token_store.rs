@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::domain::BannedTokenStore;
+use crate::domain::{BannedTokenStore, BannedTokenStoreError};
 
 #[derive(Clone, Default)]
 pub struct HashsetBannedTokenStore {
@@ -9,11 +9,12 @@ pub struct HashsetBannedTokenStore {
 
 #[async_trait::async_trait]
 impl BannedTokenStore for HashsetBannedTokenStore {
-    async fn ban_token(&mut self, token: String) {
+    async fn add_token(&mut self, token: String) -> Result<(), BannedTokenStoreError>{
         self.store.insert(token);
+        Ok(())
     }
-    async fn is_banned(&self, token: &str) -> bool {
-        self.store.contains(token)
+    async fn contains_token(&self, token: &str) -> Result<bool, BannedTokenStoreError> {
+        Ok(self.store.contains(token))
     }
 }
 
@@ -27,7 +28,7 @@ mod tests {
     async fn test_ban_token() {
         let mut hashset_banned_token_store = HashsetBannedTokenStore::default();
 
-        hashset_banned_token_store.ban_token(JWT.to_owned()).await;
+        let _ = hashset_banned_token_store.add_token(JWT.to_owned()).await;
 
         assert_eq!(
             HashSet::from([JWT.to_owned()]),
@@ -39,8 +40,8 @@ mod tests {
     async fn test_is_banned() {
         let mut hashset_banned_token_store = HashsetBannedTokenStore::default();
 
-        hashset_banned_token_store.ban_token(JWT.to_owned()).await;
+        let _ = hashset_banned_token_store.add_token(JWT.to_owned()).await;
 
-        assert!(hashset_banned_token_store.is_banned(JWT).await);
+        assert!(hashset_banned_token_store.contains_token(JWT).await.unwrap());
     }
 }

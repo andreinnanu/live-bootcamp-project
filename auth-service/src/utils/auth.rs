@@ -7,18 +7,16 @@ use crate::{app_state::AppState, domain::email::Email, utils::constants::JWT_SEC
 
 use super::constants::JWT_COOKIE_NAME;
 
-// Create cookie with a new JWT auth token
 pub fn generate_auth_cookie(email: &Email) -> Result<Cookie<'static>, GenerateTokenError> {
     let token = generate_auth_token(email)?;
     Ok(create_auth_cookie(token))
 }
 
-// Create cookie and set the value to the passed-in token string
 fn create_auth_cookie(token: String) -> Cookie<'static> {
     let cookie = Cookie::build((JWT_COOKIE_NAME, token))
-        .path("/") // apple cookie to all URLs on the server
-        .http_only(true) // prevent JavaScript from accessing the cookie
-        .same_site(SameSite::Lax) // send cookie with "same-site" requests, and with "cross-site" top-level navigations.
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
         .build();
 
     cookie
@@ -30,21 +28,17 @@ pub enum GenerateTokenError {
     UnexpectedError,
 }
 
-// This value determines how long the JWT auth token is valid for
 pub const TOKEN_TTL_SECONDS: i64 = 600; // 10 minutes
 
-// Create JWT auth token
 fn generate_auth_token(email: &Email) -> Result<String, GenerateTokenError> {
     let delta = chrono::Duration::try_seconds(TOKEN_TTL_SECONDS)
         .ok_or(GenerateTokenError::UnexpectedError)?;
 
-    // Create JWT expiration time
     let exp = Utc::now()
         .checked_add_signed(delta)
         .ok_or(GenerateTokenError::UnexpectedError)?
         .timestamp();
 
-    // Cast exp to a usize, which is what Claims expects
     let exp: usize = exp
         .try_into()
         .map_err(|_| GenerateTokenError::UnexpectedError)?;
@@ -56,14 +50,19 @@ fn generate_auth_token(email: &Email) -> Result<String, GenerateTokenError> {
     create_token(&claims).map_err(GenerateTokenError::TokenError)
 }
 
-// Check if JWT auth token is valid by decoding it using the JWT secret
 pub async fn validate_token(
     state: &AppState,
     token: &str,
 ) -> Result<Claims, jsonwebtoken::errors::Error> {
-    (!state.banned_token_store.read().await.is_banned(token).await)
-        .then_some(())
-        .ok_or(jsonwebtoken::errors::Error::from(ErrorKind::InvalidToken))?;
+    (!state
+        .banned_token_store
+        .read()
+        .await
+        .contains_token(token)
+        .await
+        .map_err(|_| jsonwebtoken::errors::Error::from(ErrorKind::InvalidToken))?)
+    .then_some(())
+    .ok_or(jsonwebtoken::errors::Error::from(ErrorKind::InvalidToken))?;
     decode::<Claims>(
         token,
         &DecodingKey::from_secret(JWT_SECRET.as_bytes()),
@@ -72,7 +71,6 @@ pub async fn validate_token(
     .map(|data| data.claims)
 }
 
-// Create JWT auth token by encoding claims using the JWT secret
 fn create_token(claims: &Claims) -> Result<String, jsonwebtoken::errors::Error> {
     encode(
         &jsonwebtoken::Header::default(),

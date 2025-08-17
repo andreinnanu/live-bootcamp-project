@@ -11,8 +11,6 @@ pub async fn logout(
     State(state): State<AppState>,
     jar: CookieJar,
 ) -> Result<(CookieJar, impl IntoResponse), AuthAPIError> {
-    // Retrieve JWT cookie from the `CookieJar`
-    // Return AuthAPIError::MissingToken is the cookie is not found
     let cookie = jar.get(JWT_COOKIE_NAME).ok_or(AuthAPIError::MissingToken)?;
 
     let token = cookie.value().to_owned();
@@ -25,8 +23,9 @@ pub async fn logout(
         .banned_token_store
         .write()
         .await
-        .ban_token(token)
-        .await;
+        .add_token(token)
+        .await
+        .map_err(|_| AuthAPIError::UnexpectedError)?;
 
     let jar = jar.remove(Cookie::from(JWT_COOKIE_NAME));
 

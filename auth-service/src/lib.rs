@@ -9,11 +9,16 @@ use axum::{
     Json, Router,
 };
 use domain::AuthAPIError;
+use redis::{Client, RedisResult};
 use serde::{Deserialize, Serialize};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use tower_http::{cors::CorsLayer, services::ServeDir};
 
-use crate::app_state::AppState;
 use crate::routes::{login, logout, signup, verify_2fa, verify_token};
+use crate::{
+    app_state::AppState,
+    utils::constants::{DATABASE_URL, REDIS_HOST_NAME},
+};
 
 pub mod app_state;
 pub mod domain;
@@ -21,29 +26,20 @@ pub mod routes;
 pub mod services;
 pub mod utils;
 
-// This struct encapsulates our application-related logic.
 pub struct Application {
     server: Serve<Router, Router>,
-    // address is exposed as a public field
-    // so we have access to it in tests.
     pub address: String,
 }
 
 impl Application {
     pub async fn build(app_state: AppState, address: &str) -> Result<Self, Box<dyn Error>> {
-        // Move the Router definition from `main.rs` to here.
-        // Also, remove the `hello` route.
-        // We don't need it at this point!
-
         let allowed_origins = [
             "http://localhost:8000".parse()?,
             "http://161.35.120.222:8000".parse()?,
         ];
 
         let cors = CorsLayer::new()
-            // Allow GET and POST requests
             .allow_methods([Method::GET, Method::POST])
-            // Allow cookies to be included in requests
             .allow_credentials(true)
             .allow_origin(allowed_origins);
 
@@ -61,7 +57,6 @@ impl Application {
         let address = listener.local_addr()?.to_string();
         let server = axum::serve(listener, router);
 
-        // Create a new Application instance and return it
         Ok(Application { server, address })
     }
 
@@ -95,4 +90,33 @@ impl IntoResponse for AuthAPIError {
         });
         (status, body).into_response()
     }
+}
+
+pub async fn configure_postgresql() -> PgPool {
+    let pg_pool = get_postgres_pool(&DATABASE_URL)
+        .await
+        .expect("Failed to create Postgres connection pool!");
+
+    sqlx::migrate!()
+        .run(&pg_pool)
+        .await
+        .expect("Failed to run migrations");
+
+    pg_pool
+}
+
+pub async fn get_postgres_pool(url: &str) -> Result<PgPool, sqlx::Error> {
+    PgPoolOptions::new().max_connections(5).connect(url).await
+}
+
+pub fn get_redis_client(redis_hostname: String) -> RedisResult<Client> {
+    let redis_url = format!("redis://{redis_hostname}/");
+    redis::Client::open(redis_url)
+}
+
+pub fn configure_redis() -> redis::Connection {
+    get_redis_client(REDIS_HOST_NAME.to_owned())
+        .expect("Failed to get Redis client")
+        .get_connection()
+        .expect("Failed to get Redis connection")
 }

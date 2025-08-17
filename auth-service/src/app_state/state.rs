@@ -3,7 +3,6 @@ use tokio::sync::RwLock;
 
 use crate::domain::{BannedTokenStore, EmailClient, TwoFACodeStore, UserStore};
 
-// Using a type alias to improve readability!
 pub type UserStoreType = Arc<RwLock<Box<dyn UserStore + 'static>>>;
 pub type BannedTokenStoreType = Arc<RwLock<Box<dyn BannedTokenStore + 'static>>>;
 pub type TwoFACodeStoreType = Arc<RwLock<Box<dyn TwoFACodeStore + 'static>>>;

@@ -1,14 +1,15 @@
 use getset::Getters;
 
-use crate::domain::{Email, Password, UserStoreError};
-
-// The User struct should contain 3 fields. email, which is a String;
-// password, which is also a String; and requires_2fa, which is a boolean.
+use crate::{
+    domain::{Email, Password, UserStoreError},
+    services::PgUser,
+};
 
 #[derive(Clone, Getters, PartialEq, Debug)]
 pub struct User {
     #[get = "pub"]
     email: Email,
+    #[get = "pub"]
     password: Password,
     #[get = "pub"]
     requires_2fa: bool,
@@ -27,6 +28,16 @@ impl User {
         match self.password == password {
             true => Ok(()),
             false => Err(UserStoreError::InvalidCredentials),
+        }
+    }
+}
+
+impl From<PgUser> for User {
+    fn from(pg_user: PgUser) -> Self {
+        User {
+            email: Email::parse(&pg_user.email).unwrap(),
+            password: Password::parse(&pg_user.password_hash).unwrap(),
+            requires_2fa: pg_user.requires_2fa,
         }
     }
 }
