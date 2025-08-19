@@ -35,11 +35,12 @@ impl UserStore for HashmapUserStore {
 mod tests {
     use super::*;
     use once_cell::sync::Lazy;
+    use secrecy::Secret;
 
     static TEST_USER: Lazy<User> = Lazy::new(|| {
         User::new(
             Email::parse("abc@test.com").unwrap(),
-            Password::parse("MySecretPassword").unwrap(),
+            Password::parse(Secret::new("MySecretPassword".to_owned())).unwrap(),
             false,
         )
     });
@@ -91,7 +92,7 @@ mod tests {
             hashmap_user_store
                 .validate_user(
                     TEST_USER.email().to_owned(),
-                    Password::parse("MySecretPassword").unwrap()
+                    Password::parse(Secret::new("MySecretPassword".to_owned())).unwrap()
                 )
                 .await
         );
@@ -100,7 +101,7 @@ mod tests {
             hashmap_user_store
                 .validate_user(
                     TEST_USER.email().to_owned(),
-                    Password::parse("NotMySecretPassword").unwrap()
+                    Password::parse(Secret::new("NotMySecretPassword".to_owned())).unwrap()
                 )
                 .await
         );

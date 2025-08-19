@@ -1,4 +1,5 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -6,6 +7,7 @@ use crate::{
     domain::{AuthAPIError, Email, Password, User, UserStoreError},
 };
 
+#[tracing::instrument(name = "Signup", skip_all)]
 pub async fn signup(
     State(state): State<AppState>,
     Json(request): Json<SignupRequest>,
@@ -15,7 +17,7 @@ pub async fn signup(
 
     let user = User::new(
         Email::parse(&email).map_err(|_| AuthAPIError::InvalidCredentials)?,
-        Password::parse(&password).map_err(|_| AuthAPIError::InvalidCredentials)?,
+        Password::parse(password).map_err(|_| AuthAPIError::InvalidCredentials)?,
         request.requires_2fa,
     );
 
@@ -30,14 +32,14 @@ pub async fn signup(
             Ok((StatusCode::CREATED, response))
         }
         Err(UserStoreError::UserAlreadyExists) => Err(AuthAPIError::UserAlreadyExists),
-        Err(_) => Err(AuthAPIError::UnexpectedError),
+        Err(e) => Err(AuthAPIError::UnexpectedError(e.into())),
     }
 }
 
 #[derive(Deserialize)]
 pub struct SignupRequest {
     pub email: String,
-    pub password: String,
+    pub password: Secret<String>,
     #[serde(rename = "requires2FA")]
     pub requires_2fa: bool,
 }

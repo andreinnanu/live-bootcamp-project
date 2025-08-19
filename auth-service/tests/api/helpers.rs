@@ -39,6 +39,7 @@ impl TestApp {
         let two_fa_code_store: TwoFACodeStoreType = Arc::new(RwLock::new(Box::new(
             RedisTwoFACodeStore::new(redis_conn.clone()),
         )));
+
         let app_state = AppState::new(
             Arc::new(RwLock::new(Box::new(PostgresUserStore::new(pg_pool)))),
             Arc::new(RwLock::new(Box::new(RedisBannedTokenStore::new(

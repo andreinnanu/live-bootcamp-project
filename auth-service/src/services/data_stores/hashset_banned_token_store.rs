@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use crate::domain::{BannedTokenStore, BannedTokenStoreError};
+use color_eyre::eyre::Result;
+use secrecy::{ExposeSecret, Secret};
+
+use crate::domain::BannedTokenStore;
 
 #[derive(Clone, Default)]
 pub struct HashsetBannedTokenStore {
@@ -9,12 +12,13 @@ pub struct HashsetBannedTokenStore {
 
 #[async_trait::async_trait]
 impl BannedTokenStore for HashsetBannedTokenStore {
-    async fn add_token(&mut self, token: String) -> Result<(), BannedTokenStoreError>{
-        self.store.insert(token);
+    async fn add_token(&mut self, token: Secret<String>) -> Result<()> {
+        self.store.insert(token.expose_secret().to_owned());
         Ok(())
     }
-    async fn contains_token(&self, token: &str) -> Result<bool, BannedTokenStoreError> {
-        Ok(self.store.contains(token))
+
+    async fn contains_token(&self, token: Secret<String>) -> Result<bool> {
+        Ok(self.store.contains(token.expose_secret()))
     }
 }
 
@@ -28,7 +32,7 @@ mod tests {
     async fn test_ban_token() {
         let mut hashset_banned_token_store = HashsetBannedTokenStore::default();
 
-        let _ = hashset_banned_token_store.add_token(JWT.to_owned()).await;
+        let _ = hashset_banned_token_store.add_token(Secret::new(JWT.to_owned())).await;
 
         assert_eq!(
             HashSet::from([JWT.to_owned()]),
@@ -40,8 +44,11 @@ mod tests {
     async fn test_is_banned() {
         let mut hashset_banned_token_store = HashsetBannedTokenStore::default();
 
-        let _ = hashset_banned_token_store.add_token(JWT.to_owned()).await;
+        let _ = hashset_banned_token_store.add_token(Secret::new(JWT.to_owned())).await;
 
-        assert!(hashset_banned_token_store.contains_token(JWT).await.unwrap());
+        assert!(hashset_banned_token_store
+            .contains_token(Secret::new(JWT.to_owned()))
+            .await
+            .unwrap());
     }
 }

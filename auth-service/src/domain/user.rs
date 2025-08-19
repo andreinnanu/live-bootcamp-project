@@ -1,4 +1,5 @@
 use getset::Getters;
+use secrecy::Secret;
 
 use crate::{
     domain::{Email, Password, UserStoreError},
@@ -8,11 +9,11 @@ use crate::{
 #[derive(Clone, Getters, PartialEq, Debug)]
 pub struct User {
     #[get = "pub"]
-    email: Email,
+    pub email: Email,
     #[get = "pub"]
-    password: Password,
+    pub password: Password,
     #[get = "pub"]
-    requires_2fa: bool,
+    pub requires_2fa: bool,
 }
 
 impl User {
@@ -36,7 +37,7 @@ impl From<PgUser> for User {
     fn from(pg_user: PgUser) -> Self {
         User {
             email: Email::parse(&pg_user.email).unwrap(),
-            password: Password::parse(&pg_user.password_hash).unwrap(),
+            password: Password::parse(Secret::new(pg_user.password_hash)).unwrap(),
             requires_2fa: pg_user.requires_2fa,
         }
     }

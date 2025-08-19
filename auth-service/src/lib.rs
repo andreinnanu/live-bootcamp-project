@@ -1,5 +1,4 @@
 use std::error::Error;
-
 use axum::{
     http::Method,
     http::StatusCode,
@@ -12,12 +11,20 @@ use domain::AuthAPIError;
 use redis::{Client, RedisResult};
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use tower_http::{cors::CorsLayer, services::ServeDir};
+use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 
-use crate::routes::{login, logout, signup, verify_2fa, verify_token};
 use crate::{
     app_state::AppState,
     utils::constants::{DATABASE_URL, REDIS_HOST_NAME},
+};
+use crate::{
+    domain::Email,
+    routes::{login, logout, signup, verify_2fa, verify_token},
+    services::PostmarkEmailClient,
+    utils::{
+        constants::{prod, POSTMARK_AUTH_TOKEN},
+        tracing::{make_span_with_request_id, on_request, on_response},
+    },
 };
 
 pub mod app_state;
@@ -51,7 +58,13 @@ impl Application {
             .route("/logout", post(logout))
             .route("/verify-token", post(verify_token))
             .with_state(app_state)
-            .layer(cors);
+            .layer(cors)
+            .layer(
+                TraceLayer::new_for_http()
+                    .make_span_with(make_span_with_request_id)
+                    .on_request(on_request)
+                    .on_response(on_response),
+            );
 
         let listener = tokio::net::TcpListener::bind(address).await?;
         let address = listener.local_addr()?.to_string();
@@ -61,7 +74,7 @@ impl Application {
     }
 
     pub async fn run(self) -> Result<(), std::io::Error> {
-        println!("listening on {}", &self.address);
+        tracing::info!("listening on {}", &self.address);
         self.server.await
     }
 }
@@ -73,6 +86,7 @@ pub struct ErrorResponse {
 
 impl IntoResponse for AuthAPIError {
     fn into_response(self) -> Response {
+        log_error_chain(&self);
         let (status, error_message) = match self {
             AuthAPIError::UserAlreadyExists => (StatusCode::CONFLICT, "User already exists"),
             AuthAPIError::InvalidCredentials => (StatusCode::BAD_REQUEST, "Invalid credentials"),
@@ -81,7 +95,7 @@ impl IntoResponse for AuthAPIError {
             }
             AuthAPIError::MissingToken => (StatusCode::BAD_REQUEST, "Missing token"),
             AuthAPIError::InvalidToken => (StatusCode::UNAUTHORIZED, "Invalid token"),
-            AuthAPIError::UnexpectedError => {
+            AuthAPIError::UnexpectedError(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "Unexpected error")
             }
         };
@@ -119,4 +133,33 @@ pub fn configure_redis() -> redis::Connection {
         .expect("Failed to get Redis client")
         .get_connection()
         .expect("Failed to get Redis connection")
+}
+
+fn log_error_chain(e: &(dyn Error + 'static)) {
+    let separator =
+        "\n-----------------------------------------------------------------------------------\n";
+    let mut report = format!("{separator}{e:?}\n");
+    let mut current = e.source();
+    while let Some(cause) = current {
+        let str = format!("Caused by:\n\n{cause:?}");
+        report = format!("{report}\n{str}");
+        current = cause.source();
+    }
+    report = format!("{report}\n{separator}");
+    tracing::error!("{}", report);
+}
+
+pub fn configure_postmark_email_client() -> PostmarkEmailClient {
+    use reqwest::Client;
+    let http_client = Client::builder()
+        .timeout(prod::email_client::TIMEOUT)
+        .build()
+        .expect("Failed to build HTTP client");
+
+    PostmarkEmailClient::new(
+        prod::email_client::BASE_URL.to_owned(),
+        Email::parse(prod::email_client::SENDER).unwrap(),
+        POSTMARK_AUTH_TOKEN.to_owned(),
+        http_client,
+    )
 }

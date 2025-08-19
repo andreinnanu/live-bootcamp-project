@@ -1,17 +1,20 @@
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use chrono::Utc;
-use jsonwebtoken::{decode, encode, errors::ErrorKind, DecodingKey, EncodingKey, Validation};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Validation};
+use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
+use color_eyre::eyre::{eyre, Context, ContextCompat, Result};
 
 use crate::{app_state::AppState, domain::email::Email, utils::constants::JWT_SECRET};
-
 use super::constants::JWT_COOKIE_NAME;
 
-pub fn generate_auth_cookie(email: &Email) -> Result<Cookie<'static>, GenerateTokenError> {
+#[tracing::instrument(name = "Generating auth cookie")]
+pub fn generate_auth_cookie(email: &Email) -> Result<Cookie<'static>> {
     let token = generate_auth_token(email)?;
     Ok(create_auth_cookie(token))
 }
 
+#[tracing::instrument(name = "Creating auth cookie", skip_all)]
 fn create_auth_cookie(token: String) -> Cookie<'static> {
     let cookie = Cookie::build((JWT_COOKIE_NAME, token))
         .path("/")
@@ -22,61 +25,59 @@ fn create_auth_cookie(token: String) -> Cookie<'static> {
     cookie
 }
 
-#[derive(Debug)]
-pub enum GenerateTokenError {
-    TokenError(jsonwebtoken::errors::Error),
-    UnexpectedError,
-}
-
 pub const TOKEN_TTL_SECONDS: i64 = 600; // 10 minutes
 
-fn generate_auth_token(email: &Email) -> Result<String, GenerateTokenError> {
+#[tracing::instrument(name = "Generating auth token", skip_all)]
+fn generate_auth_token(email: &Email) -> Result<String> {
     let delta = chrono::Duration::try_seconds(TOKEN_TTL_SECONDS)
-        .ok_or(GenerateTokenError::UnexpectedError)?;
+        .wrap_err("failed to create 10 minute time delta")?;
 
     let exp = Utc::now()
         .checked_add_signed(delta)
-        .ok_or(GenerateTokenError::UnexpectedError)?
+        .ok_or(eyre!("failed to add 10 minutes to current time"))?
         .timestamp();
 
-    let exp: usize = exp
-        .try_into()
-        .map_err(|_| GenerateTokenError::UnexpectedError)?;
+    let exp: usize = exp.try_into().wrap_err(format!(
+        "failed to cast exp time to usize. exp time: {exp}"
+    ))?;
 
     let sub = email.as_ref().to_owned();
 
     let claims = Claims { sub, exp };
 
-    create_token(&claims).map_err(GenerateTokenError::TokenError)
+    create_token(&claims)
 }
 
+#[tracing::instrument(name = "Validating token", skip_all)]
 pub async fn validate_token(
     state: &AppState,
-    token: &str,
-) -> Result<Claims, jsonwebtoken::errors::Error> {
+    token: Secret<String>,
+) -> Result<Claims> {
     (!state
         .banned_token_store
         .read()
         .await
-        .contains_token(token)
+        .contains_token(token.clone())
         .await
-        .map_err(|_| jsonwebtoken::errors::Error::from(ErrorKind::InvalidToken))?)
+        .map_err(|_| eyre!("Invalid token"))?)
     .then_some(())
-    .ok_or(jsonwebtoken::errors::Error::from(ErrorKind::InvalidToken))?;
+    .ok_or(eyre!("Invalid token"))?;
     decode::<Claims>(
-        token,
-        &DecodingKey::from_secret(JWT_SECRET.as_bytes()),
+        token.expose_secret(),
+        &DecodingKey::from_secret(JWT_SECRET.expose_secret().as_bytes()),
         &Validation::default(),
     )
     .map(|data| data.claims)
+    .wrap_err("failed to decode token")
 }
 
-fn create_token(claims: &Claims) -> Result<String, jsonwebtoken::errors::Error> {
+#[tracing::instrument(name = "Creating token", skip_all)]
+fn create_token(claims: &Claims) -> Result<String> {
     encode(
         &jsonwebtoken::Header::default(),
         &claims,
-        &EncodingKey::from_secret(JWT_SECRET.as_bytes()),
-    )
+        &EncodingKey::from_secret(JWT_SECRET.expose_secret().as_bytes()),
+    ).wrap_err("failed to create token")
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -138,8 +139,8 @@ mod tests {
     #[tokio::test]
     async fn test_validate_token_with_valid_token() {
         let email = Email::parse("test@example.com").unwrap();
-        let token = generate_auth_token(&email).unwrap();
-        let result = validate_token(&APP_STATE, &token).await.unwrap();
+        let token = Secret::new(generate_auth_token(&email).unwrap());
+        let result = validate_token(&APP_STATE, token).await.unwrap();
         assert_eq!(result.sub, "test@example.com");
 
         let exp = Utc::now()
@@ -152,8 +153,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_token_with_invalid_token() {
-        let token = "invalid_token".to_owned();
-        let result = validate_token(&APP_STATE, &token).await;
+        let token = Secret::new("invalid_token".to_owned());
+        let result = validate_token(&APP_STATE, token).await;
         assert!(result.is_err());
     }
 }

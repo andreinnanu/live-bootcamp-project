@@ -1,5 +1,6 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use axum_extra::extract::CookieJar;
+use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -8,13 +9,14 @@ use crate::{
     utils::auth::generate_auth_cookie,
 };
 
+#[tracing::instrument(name = "Login", skip_all)]
 pub async fn login(
     State(state): State<AppState>,
     jar: CookieJar,
     Json(request): Json<LoginRequest>,
 ) -> Result<(CookieJar, impl IntoResponse), AuthAPIError> {
     let email = Email::parse(&request.email).map_err(|_| AuthAPIError::InvalidCredentials)?;
-    let pwd = Password::parse(&request.password).map_err(|_| AuthAPIError::InvalidCredentials)?;
+    let pwd = Password::parse(request.password).map_err(|_| AuthAPIError::InvalidCredentials)?;
 
     let user_store = &state.user_store.read().await;
     user_store
@@ -25,7 +27,7 @@ pub async fn login(
     let user = user_store
         .get_user(email.clone())
         .await
-        .map_err(|_| AuthAPIError::UnexpectedError)?;
+        .map_err(|e| AuthAPIError::UnexpectedError(e.into()))?;
 
     match user.requires_2fa() {
         true => handle_2fa(user.email(), &state, jar).await,
@@ -33,6 +35,7 @@ pub async fn login(
     }
 }
 
+#[tracing::instrument(name = "Login handle 2FA", skip_all)]
 async fn handle_2fa(
     email: &Email,
     state: &AppState,
@@ -47,7 +50,7 @@ async fn handle_2fa(
         .await
         .add_code(email.clone(), login_attempt_id.clone(), two_fa_code.clone())
         .await
-        .map_err(|_| AuthAPIError::UnexpectedError)?;
+        .map_err(|e| AuthAPIError::UnexpectedError(e.into()))?;
 
     state
         .email_client
@@ -59,7 +62,7 @@ async fn handle_2fa(
             two_fa_code.clone().as_ref(),
         )
         .await
-        .map_err(|_| AuthAPIError::UnexpectedError)?;
+        .map_err(AuthAPIError::UnexpectedError)?;
 
     let response = Json(LoginResponse::TwoFactorAuth(TwoFactorAuthResponse {
         message: "2FA required".to_owned(),
@@ -69,11 +72,12 @@ async fn handle_2fa(
     Ok((jar, (StatusCode::PARTIAL_CONTENT, response)))
 }
 
+#[tracing::instrument(name = "Login handle non 2FA", skip_all)]
 async fn handle_no_2fa(
     email: &Email,
     jar: CookieJar,
 ) -> Result<(CookieJar, (StatusCode, Json<LoginResponse>)), AuthAPIError> {
-    let auth_cookie = generate_auth_cookie(email).map_err(|_| AuthAPIError::UnexpectedError)?;
+    let auth_cookie = generate_auth_cookie(email).map_err(AuthAPIError::UnexpectedError)?;
     let updated_jar = jar.add(auth_cookie);
     Ok((
         updated_jar,
@@ -84,7 +88,7 @@ async fn handle_no_2fa(
 #[derive(Deserialize)]
 pub struct LoginRequest {
     pub email: String,
-    pub password: String,
+    pub password: Secret<String>,
 }
 
 #[derive(Debug, Serialize)]
